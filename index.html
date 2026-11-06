@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7f3">
+  <title>California Snow Map</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <style>
+    :root { --ink:#192a29; --muted:#75817d; --line:#e4e9e3; --pine:#244d3f; --lime:#d8e996; --paper:#f8faf6; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--paper); font-family:'DM Sans',sans-serif; font-size:14px; }
+    button,input { font:inherit; }
+    button { cursor:pointer; }
+    .topbar { height:70px; padding:0 40px; display:flex; align-items:center; justify-content:space-between; background:#fff; border-bottom:1px solid var(--line); position:relative; z-index:500; }
+    .brand { display:flex; align-items:center; gap:11px; color:var(--ink); text-decoration:none; }
+    .brand-mark { width:34px; height:34px; background:var(--pine); color:#fff; display:grid; place-items:center; border-radius:50%; }
+    .brand-name { font-family:'DM Serif Display',serif; font-size:22px; line-height:1; }
+    .brand-name span { color:#7e9a80; font-style:italic; }
+    .top-right { display:flex; gap:28px; align-items:center; }
+    .top-note { font-size:12px; color:#798782; }
+    .top-tag { display:flex; gap:8px; align-items:center; border:1px solid #e1e9e2; padding:9px 13px; border-radius:3px; font-size:11px; font-weight:700; color:#456453; text-transform:uppercase; }
+    .top-tag:before { content:''; width:6px; height:6px; background:#8aaf76; border-radius:50%; }
+    .intro { padding:31px 40px 26px; display:flex; justify-content:space-between; align-items:end; gap:24px; }
+    .eyebrow { color:#779277; font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:1.6px; display:flex; align-items:center; gap:9px; }
+    .eyebrow:before { content:''; width:20px; height:1px; background:#9ab29a; }
+    h1 { font-family:'DM Serif Display',serif; font-weight:400; font-size:42px; line-height:1.12; margin:9px 0 7px; }
+    h1 em { font-weight:400; color:#799277; }
+    .intro p { color:#7a8781; margin:0; font-size:13px; }
+    .intro-side { display:flex; align-items:center; gap:18px; padding-bottom:3px; }
+    .intro-number { font-family:'DM Serif Display',serif; font-size:32px; color:var(--pine); line-height:1; }
+    .intro-label { color:#89948e; font-size:10px; line-height:1.5; text-transform:uppercase; letter-spacing:1px; }
+    .workspace { margin:0 40px 30px; height:calc(100vh - 232px); min-height:520px; display:grid; grid-template-columns:340px minmax(0,1fr); border:1px solid #dfe7df; background:#fff; }
+    .sidebar { display:flex; flex-direction:column; min-height:0; z-index:2; box-shadow:5px 0 20px #334c3110; }
+    .sidebar-head { padding:23px 22px 16px; }
+    .sidebar-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:17px; }
+    .sidebar-title h2 { font-family:'DM Serif Display',serif; font-weight:400; font-size:22px; margin:0; }
+    .count { color:#8d9b91; font-size:11px; }
+    .search { height:42px; border:1px solid #e3e9e2; display:flex; align-items:center; gap:10px; padding:0 12px; background:#fafcf9; color:#91a096; }
+    .search:focus-within { border-color:#83a88c; }
+    .search input { width:100%; min-width:0; border:0; outline:0; background:transparent; color:var(--ink); font-size:12px; }
+    .search input::placeholder { color:#a0aba3; }
+    .list-label { display:flex; justify-content:space-between; padding:3px 22px 11px; color:#9aa69c; text-transform:uppercase; font-weight:700; font-size:9px; letter-spacing:1px; }
+    .resort-list { overflow:auto; flex:1; padding:0 10px 8px; }
+    .resort-row { border:0; border-bottom:1px solid #eff2ee; background:#fff; width:100%; text-align:left; min-height:66px; padding:11px 12px; display:flex; gap:12px; align-items:center; color:var(--ink); }
+    .resort-row:hover,.resort-row.active,.resort-row:focus-visible { background:#f0f5eb; outline:none; }
+    .row-icon { flex:none; width:34px; height:34px; border-radius:50%; display:grid; place-items:center; color:#6b9376; background:#edf3e9; }
+    .row-text { min-width:0; flex:1; }
+    .row-name { display:block; font-size:12px; font-weight:700; margin-bottom:4px; }
+    .row-region { color:#9ba79e; font-size:11px; }
+    .row-arrow { color:#b5c3b5; font-size:16px; }
+    .no-results { color:#87948b; font-size:12px; padding:18px 12px; line-height:1.6; }
+    .sidebar-foot { border-top:1px solid #edf1ec; padding:14px 22px; color:#a0aaa2; font-size:10px; line-height:1.5; }
+    .map-wrap { position:relative; min-width:0; overflow:hidden; background:#e9eee5; }
+    #map { height:100%; width:100%; background:#e9eee5; }
+    .map-caption { position:absolute; z-index:400; top:20px; left:20px; background:#fffffff2; padding:12px 15px; box-shadow:0 3px 14px #253c2510; pointer-events:none; }
+    .map-caption strong { display:block; font-size:10px; text-transform:uppercase; letter-spacing:1px; }
+    .map-caption span { display:block; font-size:10px; color:#8d9c90; margin-top:4px; }
+    .map-key { position:absolute; z-index:400; right:20px; bottom:23px; background:#fffffff2; padding:12px 15px; color:#62766a; font-size:10px; box-shadow:0 3px 14px #253c2510; }
+    .map-key span { display:inline-block; width:9px; height:9px; background:var(--pine); border:2px solid #fff; outline:1px solid var(--pine); border-radius:50%; margin-right:8px; }
+    .map-pin { background:transparent; border:0; }
+    .pin { width:28px; height:28px; border-radius:50%; background:var(--pine); border:3px solid white; box-shadow:0 2px 8px #18372e65; display:grid; place-items:center; color:#fff; transition:transform .15s,background .15s; }
+    .pin svg { width:13px; height:13px; }
+    .map-pin:hover .pin,.map-pin:focus .pin,.map-pin.selected .pin { transform:scale(1.2); background:#83a651; }
+    .leaflet-container { font-family:'DM Sans',sans-serif; }
+    .leaflet-control-zoom { border:0!important; box-shadow:0 3px 14px #253c2520!important; margin:20px!important; }
+    .leaflet-control-zoom a { color:var(--pine)!important; border-color:#edf1eb!important; }
+    .leaflet-popup-content-wrapper { border-radius:3px; box-shadow:0 8px 30px #21372a30; }
+    .leaflet-popup-content { margin:17px 19px; min-width:205px; }
+    .popup-region { color:#8a9e8e; text-transform:uppercase; font-weight:700; font-size:9px; letter-spacing:1px; }
+    .popup-name { font-family:'DM Serif Display',serif; font-size:22px; margin:5px 0 13px; line-height:1.15; }
+    .popup-stat { display:flex; justify-content:space-between; gap:20px; border-top:1px solid #edf1ec; padding:9px 0; font-size:11px; color:#87948a; }
+    .popup-stat strong { color:#354f40; font-weight:700; text-align:right; }
+    .popup-note { color:#99a59b; font-size:10px; line-height:1.45; margin:4px 0 10px; }
+    .popup-link { color:#365f48!important; font-size:11px; font-weight:700; text-decoration:none; }
+    .popup-link:hover { text-decoration:underline; }
+    .footer { margin:0 40px 22px; display:flex; justify-content:space-between; gap:20px; color:#a0aaa2; font-size:10px; }
+    .footer strong { color:#7f9182; font-weight:600; }
+    @media (max-width:760px) {
+      .topbar { padding:0 20px; height:60px; }.top-note { display:none; }.top-tag { font-size:9px; }
+      .intro { padding:25px 20px 20px; }.intro-side { display:none; } h1 { font-size:34px; }.intro p { line-height:1.5; }
+      .workspace { margin:0 15px 20px; height:auto; min-height:0; display:flex; flex-direction:column-reverse; }
+      .map-wrap { height:52vh; min-height:350px; }.sidebar { height:350px; }.sidebar-head { padding:18px 18px 13px; }.sidebar-title { margin-bottom:12px; }.list-label { padding-left:18px; padding-right:18px; }.sidebar-foot { padding:10px 18px; }
+      .footer { margin:0 20px 20px; line-height:1.5; }.footer span:last-child { display:none; }.map-caption { top:12px; left:12px; }.map-key { right:12px; bottom:20px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="California Snow Map home">
+      <span class="brand-mark"><svg width="21" height="16" viewBox="0 0 24 18" fill="none" aria-hidden="true"><path d="M1 16 8.5 4l3.2 5 2.5-3.5L23 16H1Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="m6.8 6.7 1.7 1.7 1.5-1.6M13 7.3l1.2 1.3 1.4-1.2" stroke="currentColor" stroke-width="1.2"/></svg></span>
+      <span class="brand-name">snow<span>map.</span></span>
+    </a>
+    <div class="top-right"><span class="top-note">A little closer to the mountains</span><span class="top-tag">California edition</span></div>
+  </header>
+  <main>
+    <section class="intro">
+      <div><div class="eyebrow">The mountains are calling</div><h1>Find your <em>mountain.</em></h1><p>A little guide to California's ski resorts, all in one place.</p></div>
+      <div class="intro-side"><span class="intro-number" id="total-count">17</span><span class="intro-label">California<br>mountains</span></div>
+    </section>
+    <section class="workspace" aria-label="California ski resort explorer">
+      <aside class="sidebar">
+        <div class="sidebar-head"><div class="sidebar-title"><h2>Explore resorts</h2><span class="count" id="list-count"></span></div><label class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg><input id="search" type="search" placeholder="Search resorts or regions" aria-label="Search resorts or regions"></label></div>
+        <div class="list-label"><span>Mountain / Region</span><span>Explore</span></div>
+        <div class="resort-list" id="resort-list"></div>
+        <div class="sidebar-foot">Opening windows and pass prices are illustrative, unverified estimates. Check resort websites before planning.</div>
+      </aside>
+      <div class="map-wrap"><div id="map" aria-label="Map of California ski resorts"></div><div class="map-caption"><strong>California, USA</strong><span>Find your next favorite run</span></div><div class="map-key"><span></span> Ski resort</div></div>
+    </section>
+  </main>
+  <footer class="footer"><span>Made for mountain days. <strong>See you out there.</strong></span><span>Opening dates are weather dependent &nbsp; / &nbsp; Prices change seasonally</span></footer>
+  <script>
+    const resorts = [
+      {name:'Mt. Shasta Ski Park', region:'Mount Shasta', lat:41.3214, lng:-122.2034, opening:'Check website', price:'Check website', pass:'Season pass', url:'https://www.skipark.com/'},
+      {name:'Palisades Tahoe', region:'North Lake Tahoe', lat:39.1969, lng:-120.2358, opening:'Mid-November', price:'~$1,250', pass:'Ikon Pass', url:'https://www.palisadestahoe.com/'},
+      {name:'Northstar California', region:'North Lake Tahoe', lat:39.2746, lng:-120.1200, opening:'Mid-November', price:'~$1,000', pass:'Epic Pass', url:'https://www.northstarcalifornia.com/'},
+      {name:'Sugar Bowl', region:'Donner Summit', lat:39.3043, lng:-120.3377, opening:'Late November', price:'~$1,100', pass:'Season pass', url:'https://www.sugarbowl.com/'},
+      {name:'Boreal Mountain', region:'Donner Summit', lat:39.3358, lng:-120.3499, opening:'Early November', price:'~$500', pass:'Season pass', url:'https://www.rideboreal.com/'},
+      {name:'Soda Springs', region:'Donner Summit', lat:39.3230, lng:-120.3820, opening:'Late November', price:'~$500', pass:'Season pass', url:'https://www.skisodasprings.com/'},
+      {name:'Tahoe Donner', region:'Truckee', lat:39.3235, lng:-120.2836, opening:'Early December', price:'~$600', pass:'Season pass', url:'https://www.tahoedonner.com/amenities/amenities/downhill-ski/'},
+      {name:'Donner Ski Ranch', region:'Donner Summit', lat:39.3214, lng:-120.3296, opening:'Early December', price:'~$600', pass:'Season pass', url:'https://www.donnerskiranch.com/'},
+      {name:'Homewood Mountain', region:'West Lake Tahoe', lat:39.0869, lng:-120.1604, opening:'Mid-December', price:'~$1,000', pass:'Season pass', url:'https://www.skihomewood.com/'},
+      {name:'Heavenly Mountain', region:'South Lake Tahoe', lat:38.9353, lng:-119.9400, opening:'Mid-November', price:'~$1,000', pass:'Epic Pass', url:'https://www.skiheavenly.com/'},
+      {name:'Kirkwood', region:'South Lake Tahoe', lat:38.6844, lng:-120.0658, opening:'Early December', price:'~$1,000', pass:'Epic Pass', url:'https://www.kirkwood.com/'},
+      {name:'Sierra-at-Tahoe', region:'South Lake Tahoe', lat:38.8000, lng:-120.0800, opening:'Early December', price:'~$750', pass:'Season pass', url:'https://www.sierraattahoe.com/'},
+      {name:'Mammoth Mountain', region:'Eastern Sierra', lat:37.6308, lng:-119.0326, opening:'Mid-November', price:'~$1,250', pass:'Ikon Pass', url:'https://www.mammothmountain.com/'},
+      {name:'June Mountain', region:'Eastern Sierra', lat:37.7792, lng:-119.0904, opening:'Mid-December', price:'~$900', pass:'Season pass', url:'https://www.junemountain.com/'},
+      {name:'Bear Mountain', region:'Big Bear Lake', lat:34.2288, lng:-116.8600, opening:'Late November', price:'~$850', pass:'Season pass', url:'https://www.bearmountain.com/'},
+      {name:'Snow Summit', region:'Big Bear Lake', lat:34.2283, lng:-116.8893, opening:'Late November', price:'~$850', pass:'Season pass', url:'https://www.bearmountain.com/'},
+      {name:'Mountain High', region:'San Gabriel Mountains', lat:34.3765, lng:-117.6815, opening:'Late November', price:'~$600', pass:'Season pass', url:'https://www.mthigh.com/'}
+    ];
+    const mountainIcon = '<svg width="18" height="14" viewBox="0 0 24 18" fill="none" aria-hidden="true"><path d="M1 16 8.5 4l3.2 5 2.5-3.5L23 16H1Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="m6.8 6.7 1.7 1.7 1.5-1.6" stroke="currentColor" stroke-width="1.2"/></svg>';
+    const list = document.getElementById('resort-list');
+    const search = document.getElementById('search');
+    const listCount = document.getElementById('list-count');
+    document.getElementById('total-count').textContent = resorts.length;
+    const map = L.map('map', {zoomControl:false, scrollWheelZoom:false}).fitBounds(resorts.map(resort => [resort.lat, resort.lng]), {padding:[30,30]});
+    L.control.zoom({position:'topright'}).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, tiles by <a href="https://openstreetmap.fr/">OpenStreetMap France</a>', maxZoom:20}).addTo(map);
+    const markers = new Map();
+    let activeName = '';
+    function popupContent(resort) {
+      return `<div class="popup-region">${resort.region}</div><div class="popup-name">${resort.name}</div><div class="popup-stat"><span>Typical opening</span><strong>${resort.opening}</strong></div><div class="popup-stat"><span>Annual pass estimate</span><strong>${resort.price}</strong></div><div class="popup-note">${resort.pass}. Illustrative, unverified estimate, not a current quote; dates vary with conditions.</div><a class="popup-link" href="${resort.url}" target="_blank" rel="noopener noreferrer">Visit resort website &rarr;</a>`;
+    }
+    function selectResort(resort, moveMap = false) {
+      activeName = resort.name;
+      document.querySelectorAll('.resort-row').forEach(row => row.classList.toggle('active', row.dataset.name === activeName));
+      markers.forEach((marker, name) => marker.getElement()?.classList.toggle('selected', name === activeName));
+      if (moveMap) map.panTo([resort.lat, resort.lng]);
+      markers.get(resort.name).openPopup();
+    }
+    resorts.forEach(resort => {
+      const marker = L.marker([resort.lat, resort.lng], {title:resort.name, alt:resort.name, icon:L.divIcon({className:'map-pin', html:`<span class="pin">${mountainIcon}</span>`, iconSize:[28,28], iconAnchor:[14,14], popupAnchor:[0,-14]})}).addTo(map);
+      marker.bindPopup(popupContent(resort), {closeButton:true, autoPan:true});
+      marker.on('mouseover focus click', () => selectResort(resort));
+      markers.set(resort.name, marker);
+    });
+    function renderList() {
+      const query = search.value.trim().toLowerCase();
+      const filtered = resorts.filter(resort => `${resort.name} ${resort.region}`.toLowerCase().includes(query));
+      listCount.textContent = `${filtered.length} ${filtered.length === 1 ? 'resort' : 'resorts'}`;
+      list.innerHTML = '';
+      if (!filtered.length) { list.innerHTML = '<div class="no-results">No resorts found. Try another mountain or region.</div>'; return; }
+      filtered.forEach(resort => {
+        const row = document.createElement('button');
+        row.type = 'button'; row.className = 'resort-row'; row.dataset.name = resort.name;
+        row.classList.toggle('active', resort.name === activeName);
+        row.innerHTML = `<span class="row-icon">${mountainIcon}</span><span class="row-text"><span class="row-name">${resort.name}</span><span class="row-region">${resort.region}</span></span><span class="row-arrow" aria-hidden="true">&rsaquo;</span>`;
+        row.addEventListener('mouseenter', () => selectResort(resort));
+        row.addEventListener('focus', () => selectResort(resort));
+        row.addEventListener('click', () => selectResort(resort, true));
+        list.appendChild(row);
+      });
+    }
+    search.addEventListener('input', renderList);
+    renderList();
+  </script>
+</body>
+</html>
