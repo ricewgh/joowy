@@ -60,7 +60,7 @@ bool send_all(int socket, const std::string& data) {
     return true;
 }
 
-bool valid_key(const std::string& key) {
+bool valid_key(std::string_view key) {
     if (key.empty() || key.size() > 250) {
         return false;
     }

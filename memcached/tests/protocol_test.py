@@ -10,44 +10,55 @@ SERVER, CLI = sys.argv[1:3]
 sys.argv = sys.argv[:1]
 
 
-class ProtocolTest(unittest.TestCase):
+def stop_server(server):
+    server.terminate()
+    try:
+        server.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        server.kill()
+        server.wait(timeout=5)
+    server.stderr.close()
+
+
+def start_server(*extra_args):
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    server = subprocess.Popen(
+        [SERVER, str(port), *extra_args], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+    )
+    for _ in range(100):
+        if server.poll() is not None:
+            raise RuntimeError(f"server exited: {server.stderr.read().decode()}")
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                return server, port
+        except OSError:
+            time.sleep(0.02)
+    stop_server(server)
+    raise RuntimeError("server did not start")
+
+
+class ServerTestCase(unittest.TestCase):
+    server_args = ()
+
     @classmethod
     def setUpClass(cls):
-        with socket.socket() as sock:
-            sock.bind(("127.0.0.1", 0))
-            cls.port = sock.getsockname()[1]
-        cls.server = subprocess.Popen(
-            [SERVER, str(cls.port)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
-        )
-        for _ in range(100):
-            if cls.server.poll() is not None:
-                raise RuntimeError(f"server exited: {cls.server.stderr.read().decode()}")
-            try:
-                with socket.create_connection(("127.0.0.1", cls.port), timeout=0.1):
-                    return
-            except OSError:
-                time.sleep(0.02)
-        cls.server.terminate()
-        cls.server.wait(timeout=5)
-        raise RuntimeError("server did not start")
+        cls.server, cls.port = start_server(*cls.server_args)
 
     @classmethod
     def tearDownClass(cls):
-        cls.server.terminate()
-        try:
-            cls.server.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            cls.server.kill()
-            cls.server.wait(timeout=5)
-        cls.server.stderr.close()
+        stop_server(cls.server)
 
     def connect(self):
-        sock = socket.create_connection(("127.0.0.1", self.port), timeout=3)
+        sock = socket.create_connection(("127.0.0.1", self.port), timeout=5)
         self.addCleanup(sock.close)
         stream = sock.makefile("rb")
         self.addCleanup(stream.close)
         return sock, stream
 
+
+class ProtocolTest(ServerTestCase):
     def test_set_get_delete_and_pipeline(self):
         sock, stream = self.connect()
         sock.sendall(
@@ -119,6 +130,49 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual(stream.readline(), b"CLIENT_ERROR bad data chunk\r\n")
         self.assertEqual(stream.read(), b"")
 
+    def test_get_hit_is_not_delayed(self):
+        # A get hit used to be sent as two writes, which Nagle and delayed ACK stalled for ~40ms.
+        sock, stream = self.connect()
+        sock.sendall(b"set k 0 0 5\r\nhello\r\n")
+        self.assertEqual(stream.readline(), b"STORED\r\n")
+        start = time.monotonic()
+        for _ in range(100):
+            sock.sendall(b"get k\r\n")
+            self.assertEqual(stream.readline(), b"VALUE k 0 5\r\n")
+            self.assertEqual(stream.read(7), b"hello\r\n")
+            self.assertEqual(stream.readline(), b"END\r\n")
+        self.assertLess(time.monotonic() - start, 2.0)
+
+    def test_half_close_still_receives_responses(self):
+        sock, stream = self.connect()
+        sock.sendall(b"set half 0 0 2\r\nok\r\nget half\r\n")
+        sock.shutdown(socket.SHUT_WR)
+        self.assertEqual(
+            stream.read(), b"STORED\r\nVALUE half 0 2\r\nok\r\nEND\r\n"
+        )
+
+    def test_large_pipelined_responses_wait_for_a_slow_reader(self):
+        sock, stream = self.connect()
+        value = b"v" * (1024 * 1024)
+        sock.sendall(b"set big 0 0 1048576\r\n" + value + b"\r\n")
+        self.assertEqual(stream.readline(), b"STORED\r\n")
+        count = 20
+        sock.sendall(b"get big\r\n" * count)
+        time.sleep(0.5)  # the server must hold back, not buffer or drop responses
+        for _ in range(count):
+            self.assertEqual(stream.readline(), b"VALUE big 0 1048576\r\n")
+            self.assertEqual(stream.read(len(value) + 2), value + b"\r\n")
+            self.assertEqual(stream.readline(), b"END\r\n")
+        sock.sendall(b"delete big\r\n")
+        self.assertEqual(stream.readline(), b"DELETED\r\n")
+
+    def test_get_with_too_many_keys_is_rejected(self):
+        sock, stream = self.connect()
+        sock.sendall(b"get " + b" ".join(b"k%d" % i for i in range(101)) + b"\r\n")
+        self.assertEqual(stream.readline(), b"CLIENT_ERROR too many keys\r\n")
+        sock.sendall(b"get k1\r\n")
+        self.assertEqual(stream.readline(), b"END\r\n")
+
     def test_concurrent_clients(self):
         def worker(worker_id):
             with socket.create_connection(("127.0.0.1", self.port), timeout=5) as sock:
@@ -156,6 +210,46 @@ class ProtocolTest(unittest.TestCase):
         self.assertIn('VALUE human flags=0 bytes=11 "hello world"', result.stdout)
         self.assertIn("DELETED", result.stdout)
         self.assertTrue(result.stdout.count("END") >= 2)
+
+
+class IdleTimeoutTest(ServerTestCase):
+    server_args = ("256", "1")
+
+    def test_idle_connection_is_closed_but_active_one_is_kept(self):
+        idle_sock, _ = self.connect()
+        active_sock, active_stream = self.connect()
+        for _ in range(6):
+            time.sleep(0.5)
+            active_sock.sendall(b"get x\r\n")
+            self.assertEqual(active_stream.readline(), b"END\r\n")
+        try:
+            self.assertEqual(idle_sock.recv(10), b"")
+        except ConnectionResetError:
+            pass
+
+
+class EvictionTest(ServerTestCase):
+    server_args = ("1",)
+
+    def test_memory_is_bounded_and_newest_entry_is_kept(self):
+        sock, stream = self.connect()
+        value = b"v" * 10000
+        keys = 300  # about 3 MB written to a 1 MB cache
+        for i in range(keys):
+            sock.sendall(b"set key-%d 0 0 %d\r\n" % (i, len(value)) + value + b"\r\n")
+            self.assertEqual(stream.readline(), b"STORED\r\n")
+        hits = set()
+        for i in range(keys):
+            sock.sendall(b"get key-%d\r\n" % i)
+            line = stream.readline()
+            if line != b"END\r\n":
+                hits.add(i)
+                stream.read(len(value) + 2)
+                self.assertEqual(stream.readline(), b"END\r\n")
+        self.assertIn(keys - 1, hits)
+        self.assertGreater(len(hits), 0)
+        self.assertLessEqual(len(hits), 100)
+        self.assertNotIn(0, hits)
 
 
 if __name__ == "__main__":

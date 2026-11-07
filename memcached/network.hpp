@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 
 class SocketReader {
 public:
@@ -19,7 +20,7 @@ private:
 };
 
 bool send_all(int socket, const std::string& data);
-bool valid_key(const std::string& key);
+bool valid_key(std::string_view key);
 bool parse_port(const std::string& text, unsigned short& port);
 
 #endif
