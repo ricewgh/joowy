@@ -51,6 +51,37 @@ Enter `set greeting "hello world"`, `get greeting`, `delete greeting`, and
 quotes and backslashes inside quoted values. The CLI uses flags `0` and no
 expiration. Stop the server with Ctrl+C.
 
+## Stress tests and sanitizers
+
+`ctest` includes short smoke runs of two stress programs. Run them directly for longer runs:
+
+```sh
+# In-process: readers and writers hammer the cache and check every value is intact.
+# Prints throughput and writer latency (p50/p99/max) for ten scenarios.
+./memcached/build/cache_stress 5            # seconds per scenario (default 2)
+
+# Over TCP: N clients issue random get/set/delete against a running server and verify
+# every response. Arguments: PORT CLIENTS SECONDS KEYS VALUE_BYTES
+./memcached/build/memcached_server 11212 &
+./memcached/build/net_stress 11212 64 10 1024 100
+```
+
+Both exit non-zero if they see a corrupt value or a protocol error. To look for data races
+or memory errors, build in a separate directory with a sanitizer and run the whole suite;
+the tests fail if the server prints a sanitizer report:
+
+```sh
+cmake -S memcached -B memcached/build-tsan -DSANITIZE=thread
+cmake --build memcached/build-tsan
+ctest --test-dir memcached/build-tsan --output-on-failure
+
+cmake -S memcached -B memcached/build-asan -DSANITIZE=address,undefined
+```
+
+On some kernels ThreadSanitizer aborts with "unexpected memory mapping"; running the
+command through `setarch -R` (for example `setarch -R ctest ...`) works around it.
+Timings from a sanitizer build are not meaningful.
+
 ## Protocol and limits
 
 The server implements the memcached **text protocol subset** `get` (including

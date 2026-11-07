@@ -10,6 +10,9 @@ SERVER, CLI = sys.argv[1:3]
 sys.argv = sys.argv[:1]
 
 
+SANITIZER_MARKERS = ("ThreadSanitizer", "AddressSanitizer", "runtime error")
+
+
 def stop_server(server):
     server.terminate()
     try:
@@ -17,7 +20,9 @@ def stop_server(server):
     except subprocess.TimeoutExpired:
         server.kill()
         server.wait(timeout=5)
+    output = server.stderr.read().decode(errors="replace")
     server.stderr.close()
+    return output
 
 
 def start_server(*extra_args):
@@ -48,7 +53,9 @@ class ServerTestCase(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        stop_server(cls.server)
+        output = stop_server(cls.server)
+        if any(marker in output for marker in SANITIZER_MARKERS):
+            raise AssertionError(f"server reported a sanitizer error:\n{output}")
 
     def connect(self):
         sock = socket.create_connection(("127.0.0.1", self.port), timeout=5)
